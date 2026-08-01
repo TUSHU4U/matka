@@ -9,6 +9,7 @@ if (!isset($_SESSION['admin_logged_in'])) {
 }
 
 $db = Database::getInstance();
+$page_title = "Manage Results";
 
 $date = $_GET['date'] ?? date('Y-m-d');
 
@@ -40,7 +41,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_results'])) {
                 ");
                 $stmt->execute([$post_date, $time, $val]);
             } else {
-                // If empty, delete the record so it doesn't show
                 $stmt = $db->prepare("DELETE FROM fatafat_results WHERE result_date = ? AND result_time = ?");
                 $stmt->execute([$post_date, $time]);
             }
@@ -48,7 +48,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_results'])) {
     }
     
     $success = "Results saved successfully for " . htmlspecialchars($post_date);
-    $date = $post_date; // stay on same date
+    $date = $post_date;
+}
+
+// Handle Clear All
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_all'])) {
+    $post_date = $_POST['result_date'];
+    $stmt = $db->prepare("DELETE FROM fatafat_results WHERE result_date = ?");
+    $stmt->execute([$post_date]);
+    $success = "All results cleared for " . htmlspecialchars($post_date);
+    $date = $post_date;
 }
 
 // Fetch existing results for this date
@@ -59,81 +68,76 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
     $existing[$row['result_time']] = $row['result_val'];
 }
 
+include 'includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Manage Results</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        .time-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 15px;
-        }
-        .time-card {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 6px;
-            padding: 10px;
-            text-align: center;
-        }
-        .time-label {
-            font-weight: bold;
-            color: #0d6efd;
-            margin-bottom: 5px;
-        }
-    </style>
-</head>
-<body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="index.php">Fatafat Admin</a>
-            <div class="navbar-nav">
-                <a class="nav-link" href="index.php">Dashboard</a>
-                <a class="nav-link active" href="results.php">Manage Results</a>
-                <a class="nav-link" href="logout.php">Logout</a>
-            </div>
-        </div>
-    </nav>
 
-    <div class="container mt-4 mb-5">
-        <h4>Manage Fatafat Results</h4>
-        
-        <?php if (isset($success)): ?>
-            <div class="alert alert-success"><?= $success ?></div>
-        <?php endif; ?>
+<style>
+    .time-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 15px;
+    }
+    .time-card {
+        background: #fff;
+        border: 1px solid #e9ecef;
+        border-radius: 6px;
+        padding: 10px;
+        text-align: center;
+        transition: border-color 0.2s;
+    }
+    .time-card:focus-within {
+        border-color: #0d6efd;
+        box-shadow: 0 0 0 0.2rem rgba(13,110,253,.25);
+    }
+    .time-label {
+        font-weight: bold;
+        color: #495057;
+        margin-bottom: 5px;
+    }
+</style>
 
-        <!-- Date Selector -->
-        <div class="card mb-4 shadow-sm">
-            <div class="card-body">
-                <form method="GET" class="d-flex align-items-center">
-                    <label class="me-2 fw-bold">Select Date:</label>
-                    <input type="date" name="date" class="form-control w-auto me-3" value="<?= htmlspecialchars($date) ?>">
-                    <button type="submit" class="btn btn-secondary">Load Date</button>
-                </form>
-            </div>
-        </div>
+<?php if (isset($success)): ?>
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <?= htmlspecialchars($success) ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+<?php endif; ?>
 
-        <form method="POST">
+<!-- Date Selector -->
+<div class="card mb-4 shadow-sm border-0">
+    <div class="card-body d-flex justify-content-between align-items-center bg-white rounded">
+        <form method="GET" class="d-flex align-items-center mb-0">
+            <label class="me-3 fw-bold text-muted">Viewing Date:</label>
+            <input type="date" name="date" class="form-control w-auto me-3" value="<?= htmlspecialchars($date) ?>">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i> Load</button>
+        </form>
+
+        <form method="POST" class="mb-0" onsubmit="return confirm('Are you sure you want to delete ALL results for <?= htmlspecialchars($date) ?>? This cannot be undone.');">
             <input type="hidden" name="result_date" value="<?= htmlspecialchars($date) ?>">
-            
-            <div class="time-grid mb-4">
-                <?php foreach ($timeslots as $time): 
-                    $val = $existing[$time] ?? '';
-                    $input_name = 'res_' . str_replace(':', '_', $time);
-                ?>
-                    <div class="time-card shadow-sm">
-                        <div class="time-label"><?= $time ?></div>
-                        <input type="text" name="<?= $input_name ?>" class="form-control text-center font-monospace" 
-                               value="<?= htmlspecialchars($val) ?>" placeholder="e.g. 123-45">
-                    </div>
-                <?php endforeach; ?>
-            </div>
-            
-            <button type="submit" name="save_results" class="btn btn-primary btn-lg w-100 shadow">Save Results</button>
+            <button type="submit" name="clear_all" class="btn btn-outline-danger"><i class="bi bi-trash3-fill"></i> Clear All for Date</button>
         </form>
     </div>
-</body>
-</html>
+</div>
+
+<form method="POST">
+    <input type="hidden" name="result_date" value="<?= htmlspecialchars($date) ?>">
+    
+    <div class="time-grid mb-4">
+        <?php foreach ($timeslots as $time): 
+            $val = $existing[$time] ?? '';
+            $input_name = 'res_' . str_replace(':', '_', $time);
+        ?>
+            <div class="time-card shadow-sm">
+                <div class="time-label"><?= $time ?></div>
+                <input type="text" name="<?= $input_name ?>" class="form-control text-center font-monospace <?= $val ? 'border-success bg-success bg-opacity-10' : '' ?>" 
+                       value="<?= htmlspecialchars($val) ?>" placeholder="---">
+            </div>
+        <?php endforeach; ?>
+    </div>
+    
+    <div class="position-sticky bottom-0 bg-white p-3 border-top shadow-lg" style="z-index: 1000; margin-left: -20px; margin-right: -20px;">
+        <button type="submit" name="save_results" class="btn btn-success btn-lg px-5 shadow"><i class="bi bi-save2-fill"></i> Save All Results</button>
+    </div>
+</form>
+
+<?php include 'includes/footer.php'; ?>

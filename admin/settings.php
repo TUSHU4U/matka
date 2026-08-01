@@ -1,137 +1,110 @@
 <?php
-/**
- * Admin — Site Settings
- */
-require_once dirname(__DIR__) . '/includes/config.php';
-require_once dirname(__DIR__) . '/includes/db.php';
-require_once dirname(__DIR__) . '/includes/auth.php';
-require_once dirname(__DIR__) . '/includes/functions.php';
-require_once dirname(__DIR__) . '/includes/csrf.php';
+session_start();
+require_once '../includes/config.php';
+require_once '../includes/db.php';
 
-requireAdmin();
-$adminPageTitle = 'Site Settings';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    validateCsrf();
-
-    $fields = [
-        'site_name', 'site_tagline', 'contact_phone', 'contact_email',
-        'notice_text', 'footer_text', 'meta_description', 'meta_keywords',
-        'whatsapp_number', 'telegram_link',
-    ];
-
-    foreach ($fields as $key) {
-        $val = sanitize($_POST[$key] ?? '');
-        setSetting($key, $val);
-    }
-
-    setFlash('success', 'Settings saved successfully!');
-    header('Location: ' . APP_URL . '/admin/settings.php');
+if (!isset($_SESSION['admin_logged_in'])) {
+    header('Location: login.php');
     exit;
 }
 
-include __DIR__ . '/includes/header.php';
+$db = Database::getInstance();
+$page_title = "Settings";
+
+// Handle Marquee Update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_marquee'])) {
+    $new_text = $_POST['marquee_text'] ?? '';
+    $stmt = $db->prepare("UPDATE settings SET setting_value = ? WHERE setting_key = 'marquee'");
+    $stmt->execute([$new_text]);
+    $success = "Marquee updated successfully!";
+}
+
+// Handle Password Change
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_password'])) {
+    $current_pw = $_POST['current_pw'] ?? '';
+    $new_pw = $_POST['new_pw'] ?? '';
+    $confirm_pw = $_POST['confirm_pw'] ?? '';
+
+    if ($new_pw !== $confirm_pw) {
+        $error_pw = "New passwords do not match.";
+    } else {
+        $stmt = $db->prepare("SELECT password_hash FROM admin_users WHERE id = ?");
+        $stmt->execute([$_SESSION['admin_id']]);
+        $hash = $stmt->fetchColumn();
+
+        if (password_verify($current_pw, $hash)) {
+            $new_hash = password_hash($new_pw, PASSWORD_DEFAULT);
+            $update = $db->prepare("UPDATE admin_users SET password_hash = ? WHERE id = ?");
+            $update->execute([$new_hash, $_SESSION['admin_id']]);
+            $success_pw = "Password updated successfully!";
+        } else {
+            $error_pw = "Incorrect current password.";
+        }
+    }
+}
+
+// Fetch current marquee
+$stmt = $db->query("SELECT setting_value FROM settings WHERE setting_key = 'marquee'");
+$marquee = $stmt->fetchColumn() ?: '';
+
+include 'includes/header.php';
 ?>
 
-<div class="row g-4">
-<div class="col-12">
-  <div class="admin-card">
-    <div class="admin-card-header">
-      <div class="admin-card-title"><i class="bi bi-gear text-gold"></i> Site Settings</div>
-    </div>
-    <div class="admin-card-body">
-      <form method="POST" action="" class="dirty-track">
-        <?= csrfField() ?>
-
-        <div class="settings-grid">
-
-          <!-- General -->
-          <div>
-            <div class="result-section-label mb-3"><i class="bi bi-globe"></i> General</div>
-            <div class="admin-form-group">
-              <label class="admin-label">Site Name</label>
-              <input type="text" name="site_name" class="admin-input"
-                     value="<?= e(getSetting('site_name', APP_NAME)) ?>" maxlength="60">
+<div class="row">
+    <!-- Marquee Settings -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-primary text-white fw-bold">
+                <i class="bi bi-text-paragraph"></i> Marquee Text Settings
             </div>
-            <div class="admin-form-group">
-              <label class="admin-label">Site Tagline</label>
-              <input type="text" name="site_tagline" class="admin-input"
-                     value="<?= e(getSetting('site_tagline')) ?>" maxlength="100">
+            <div class="card-body bg-light">
+                <?php if (isset($success)): ?>
+                    <div class="alert alert-success"><?= htmlspecialchars($success) ?></div>
+                <?php endif; ?>
+                
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label text-muted">Scrolling Text on Homepage</label>
+                        <textarea name="marquee_text" class="form-control" rows="5" required><?= htmlspecialchars($marquee) ?></textarea>
+                    </div>
+                    <button type="submit" name="update_marquee" class="btn btn-primary w-100 fw-bold"><i class="bi bi-save"></i> Update Marquee</button>
+                </form>
             </div>
-            <div class="admin-form-group">
-              <label class="admin-label">Notice / Ticker Text</label>
-              <textarea name="notice_text" class="admin-input" rows="3"
-                        placeholder="Announcement shown in the news ticker"><?= e(getSetting('notice_text')) ?></textarea>
-            </div>
-            <div class="admin-form-group">
-              <label class="admin-label">Footer Text</label>
-              <input type="text" name="footer_text" class="admin-input"
-                     value="<?= e(getSetting('footer_text')) ?>" maxlength="200">
-            </div>
-          </div>
-
-          <!-- Contact -->
-          <div>
-            <div class="result-section-label mb-3"><i class="bi bi-telephone"></i> Contact Information</div>
-            <div class="admin-form-group">
-              <label class="admin-label">Phone Number</label>
-              <input type="text" name="contact_phone" class="admin-input"
-                     value="<?= e(getSetting('contact_phone')) ?>"
-                     placeholder="+91 99999 99999">
-            </div>
-            <div class="admin-form-group">
-              <label class="admin-label">Email Address</label>
-              <input type="email" name="contact_email" class="admin-input"
-                     value="<?= e(getSetting('contact_email')) ?>"
-                     placeholder="info@example.com">
-            </div>
-            <div class="admin-form-group">
-              <label class="admin-label">WhatsApp Number</label>
-              <input type="text" name="whatsapp_number" class="admin-input"
-                     value="<?= e(getSetting('whatsapp_number')) ?>"
-                     placeholder="+91 99999 99999 (with country code)">
-              <div class="input-hint">Include country code, digits only for the wa.me link</div>
-            </div>
-            <div class="admin-form-group">
-              <label class="admin-label">Telegram Link</label>
-              <input type="url" name="telegram_link" class="admin-input"
-                     value="<?= e(getSetting('telegram_link')) ?>"
-                     placeholder="https://t.me/yourchannel">
-            </div>
-          </div>
-
-        </div><!-- /settings-grid -->
-
-        <!-- SEO -->
-        <hr style="border-color:var(--admin-border);margin:24px 0">
-        <div class="result-section-label mb-3"><i class="bi bi-search"></i> SEO Settings</div>
-        <div class="row g-3">
-          <div class="col-md-6">
-            <div class="admin-form-group mb-0">
-              <label class="admin-label">Meta Description</label>
-              <textarea name="meta_description" class="admin-input" rows="3"
-                        maxlength="160"><?= e(getSetting('meta_description')) ?></textarea>
-              <div class="input-hint">Max 160 characters. Used in search results.</div>
-            </div>
-          </div>
-          <div class="col-md-6">
-            <div class="admin-form-group mb-0">
-              <label class="admin-label">Meta Keywords</label>
-              <textarea name="meta_keywords" class="admin-input" rows="3"><?= e(getSetting('meta_keywords')) ?></textarea>
-              <div class="input-hint">Comma-separated keywords</div>
-            </div>
-          </div>
         </div>
-
-        <div class="mt-4">
-          <button type="submit" class="btn-admin-primary" style="padding:12px 32px">
-            <i class="bi bi-check-circle me-1"></i> Save All Settings
-          </button>
-        </div>
-      </form>
     </div>
-  </div>
-</div>
+
+    <!-- Security Settings -->
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0 border-top border-4 border-danger">
+            <div class="card-header bg-white fw-bold text-danger">
+                <i class="bi bi-shield-lock-fill"></i> Change Admin Password
+            </div>
+            <div class="card-body bg-light">
+                <?php if (isset($success_pw)): ?>
+                    <div class="alert alert-success"><?= htmlspecialchars($success_pw) ?></div>
+                <?php endif; ?>
+                <?php if (isset($error_pw)): ?>
+                    <div class="alert alert-danger"><?= htmlspecialchars($error_pw) ?></div>
+                <?php endif; ?>
+                
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label text-muted">Current Password</label>
+                        <input type="password" name="current_pw" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-muted">New Password</label>
+                        <input type="password" name="new_pw" class="form-control" required minlength="6">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-muted">Confirm New Password</label>
+                        <input type="password" name="confirm_pw" class="form-control" required minlength="6">
+                    </div>
+                    <button type="submit" name="update_password" class="btn btn-danger w-100 fw-bold"><i class="bi bi-key-fill"></i> Change Password</button>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 
-<?php include __DIR__ . '/includes/footer.php'; ?>
+<?php include 'includes/footer.php'; ?>

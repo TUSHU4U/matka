@@ -1,7 +1,6 @@
-  </div><!-- /admin-content -->
-</div><!-- /admin-main -->
-</div><!-- /admin-wrapper -->
-
-<script src="<?= e(APP_URL) ?>/assets/js/admin.js"></script>
+        </div> <!-- End Main Content -->
+    </div> <!-- End d-flex -->
+    <!-- Bootstrap JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
