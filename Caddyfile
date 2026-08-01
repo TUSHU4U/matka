@@ -1,0 +1,69 @@
+# ─────────────────────────────────────────────────────────────
+# Caddyfile — FrankenPHP on Railway
+# Fixes: "directive 'php_server' is not an ordered HTTP handler"
+# ─────────────────────────────────────────────────────────────
+{
+    # FrankenPHP integration (must be in global block)
+    frankenphp
+
+    # Disable Caddy's admin API (not needed in Railway containers)
+    admin off
+
+    # KEY FIX: register php_server in Caddy's directive ordering chain.
+    # Without this, Caddy does not know where to place php_server relative
+    # to other handlers and throws the "not an ordered HTTP handler" error.
+    order php_server before file_server
+
+    # Log to stderr so Railway captures it in its log viewer
+    log {
+        output stderr
+        format console
+        level INFO
+    }
+}
+
+# ─── Virtual Host — binds to Railway's $PORT ─────────────────
+:{$PORT:8080} {
+
+    # Document root
+    root * /app
+
+    # ─── Gzip compression ─────────────────────────────────────
+    encode gzip
+
+    # ─── Security Headers ─────────────────────────────────────
+    header {
+        X-Content-Type-Options        "nosniff"
+        X-Frame-Options               "SAMEORIGIN"
+        X-XSS-Protection              "1; mode=block"
+        Referrer-Policy               "strict-origin-when-cross-origin"
+        Permissions-Policy            "geolocation=(), microphone=(), camera=()"
+        -Server
+        -X-Powered-By
+    }
+
+    # ─── Block direct access to sensitive directories ──────────
+    @blocked {
+        path /includes/*
+        path /admin/includes/*
+    }
+    respond @blocked 403
+
+    # ─── Block sensitive file extensions ──────────────────────
+    @sensitiveFiles {
+        path_regexp sensitiveExt \.(env|log|sql|bak|sh|lock|md)$
+    }
+    respond @sensitiveFiles 403
+
+    # ─── Block known bad bots ─────────────────────────────────
+    @badBots {
+        header_regexp User-Agent (?i)(havij|sqlmap|nikto|masscan|nmap)
+    }
+    respond @badBots 403
+
+    # ─── PHP via FrankenPHP ───────────────────────────────────
+    # php_server is now correctly ordered via the global `order` directive.
+    # It serves .php files through FrankenPHP and falls back to file_server
+    # for static assets. Missing paths are routed to index.php automatically.
+    php_server
+}
