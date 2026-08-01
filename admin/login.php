@@ -1,129 +1,86 @@
 <?php
-/**
- * Admin Login — Rate-limited, CSRF-protected
- */
+session_start();
 require_once dirname(__DIR__) . '/includes/config.php';
 require_once dirname(__DIR__) . '/includes/db.php';
-require_once dirname(__DIR__) . '/includes/auth.php';
-require_once dirname(__DIR__) . '/includes/csrf.php';
-require_once dirname(__DIR__) . '/includes/functions.php';
 
-startSecureSession();
-
-// Already logged in → redirect
-if (isAdminLoggedIn()) {
-    header('Location: ' . APP_URL . '/admin/index.php');
+// If already logged in, go to index
+if (isset($_SESSION['admin_logged_in'])) {
+    header('Location: index.php');
     exit;
 }
 
-$error   = '';
-$success = '';
-
-if (!empty($_GET['timeout'])) {
-    $error = 'Session expired. Please log in again.';
-}
+$error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    validateCsrf();
-
-    $username = sanitize($_POST['username'] ?? '');
+    $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
 
     if ($username === '' || $password === '') {
         $error = 'Please enter both username and password.';
     } else {
-        $result = attemptLogin($username, $password);
-        if ($result['success']) {
-            header('Location: ' . APP_URL . '/admin/index.php');
-            exit;
-        } else {
-            $error = $result['message'];
+        try {
+            $db = Database::getInstance();
+            $stmt = $db->prepare("SELECT id, password_hash FROM admin_users WHERE username = ?");
+            $stmt->execute([$username]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($user && password_verify($password, $user['password_hash'])) {
+                // Success
+                $_SESSION['admin_logged_in'] = true;
+                $_SESSION['admin_id'] = $user['id'];
+                $_SESSION['admin_username'] = $username;
+                header('Location: index.php');
+                exit;
+            } else {
+                $error = 'Invalid username or password.';
+            }
+        } catch (PDOException $e) {
+            $error = 'Database error. Please run install.php first.';
         }
     }
 }
-
-$siteName = getSetting('site_name', APP_NAME);
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Login — <?= e($siteName) ?></title>
-  <meta name="robots" content="noindex, nofollow">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="<?= e(APP_URL) ?>/assets/css/admin.css">
+  <title>Admin Login - Fatafat System</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+      body {
+          background-color: #f4f7f6;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+      }
+      .login-card {
+          width: 100%;
+          max-width: 400px;
+          padding: 2rem;
+          border-radius: 10px;
+          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+          background: #fff;
+      }
+  </style>
 </head>
 <body>
-<div class="admin-login-page">
-  <div class="login-box">
-
-    <!-- Logo -->
-    <div class="login-logo">
-      <div class="logo-circle">RK</div>
-      <h1><?= e($siteName) ?></h1>
-      <p>Admin Control Panel</p>
-    </div>
-
-    <!-- Alert -->
+<div class="login-card text-center">
+    <h3 class="mb-4">Admin Login</h3>
+    
     <?php if ($error): ?>
-    <div class="admin-alert admin-alert-error">
-      <i class="bi bi-exclamation-triangle-fill"></i>
-      <?= e($error) ?>
-    </div>
+        <div class="alert alert-danger py-2"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
-
-    <!-- Login Form -->
-    <form method="POST" action="" autocomplete="off">
-      <?= csrfField() ?>
-
-      <div class="admin-form-group">
-        <label class="admin-label" for="username">
-          <i class="bi bi-person me-1"></i> Username
-        </label>
-        <input type="text" id="username" name="username"
-               class="admin-input"
-               placeholder="Enter admin username"
-               value="<?= e($_POST['username'] ?? '') ?>"
-               autocomplete="username"
-               required autofocus>
-      </div>
-
-      <div class="admin-form-group">
-        <label class="admin-label" for="password">
-          <i class="bi bi-lock me-1"></i> Password
-        </label>
-        <div style="position:relative">
-          <input type="password" id="password" name="password"
-                 class="admin-input"
-                 placeholder="Enter password"
-                 autocomplete="current-password"
-                 required>
-          <button type="button"
-                  data-toggle-password="password"
-                  style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--admin-muted);cursor:pointer;font-size:16px">
-            <i class="bi bi-eye"></i>
-          </button>
+    
+    <form method="POST">
+        <div class="mb-3">
+            <input type="text" name="username" class="form-control" placeholder="Username" required autofocus>
         </div>
-      </div>
-
-      <button type="submit" class="login-btn">
-        <i class="bi bi-box-arrow-in-right me-2"></i> Sign In
-      </button>
+        <div class="mb-4">
+            <input type="password" name="password" class="form-control" placeholder="Password" required>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Login</button>
     </form>
-
-    <div style="text-align:center;margin-top:20px;font-size:11px;color:var(--admin-muted)">
-      Max <?= LOGIN_MAX_ATTEMPTS ?> attempts • <?= LOGIN_LOCKOUT_MINUTES ?> min lockout
-    </div>
-
-    <div style="text-align:center;margin-top:12px">
-      <a href="<?= e(APP_URL) ?>/" style="font-size:12px;color:var(--admin-muted)">
-        <i class="bi bi-arrow-left me-1"></i> Back to Website
-      </a>
-    </div>
-  </div>
 </div>
-
-<script src="<?= e(APP_URL) ?>/assets/js/admin.js"></script>
 </body>
 </html>
